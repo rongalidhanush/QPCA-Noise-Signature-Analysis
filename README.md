@@ -1,8 +1,4 @@
-# ⚛️ NQPCA: Quantum Noise Signature Project
-
-![Language](https://shields.io)
-![Domain](https://shields.io)
-![Topic](https://shields.io)
+#  NQPCA: Quantum Noise Signature Project
 
 A MATLAB simulation and benchmarking framework for **Noisy Quantum Principal Component Analysis (NQPCA)**. This project investigates how quantum noise affects density matrix exponentiation and Quantum Phase Estimation (QPE), enabling the extraction and validation of **quantum noise signatures** across physical noise channels.
 
