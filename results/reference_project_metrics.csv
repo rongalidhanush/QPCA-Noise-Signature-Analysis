@@ -1,0 +1,8 @@
+Metric,Value
+Rows,3000.0
+Feature dimension,15.0
+Quantum system dimension,16.0
+System qubits,4.0
+QPE ancilla qubits,8.0
+QPE phase resolution,0.00390625
+Top-3 explained variance (%),95.91275193920029
