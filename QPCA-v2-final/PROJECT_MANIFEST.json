@@ -1,0 +1,10 @@
+{
+  "project": "N-QPCA Based Quantum Noise Signature Analysis",
+  "dataset_rows": 3000,
+  "feature_dimension": 15,
+  "quantum_hilbert_dimension": 16,
+  "system_qubits": 4,
+  "qpe_ancilla_qubits": 8,
+  "main_algorithm": "State-vector simulation of QPCA spectral estimation using QPE",
+  "dataset_file": "data/noise_dataset.csv"
+}

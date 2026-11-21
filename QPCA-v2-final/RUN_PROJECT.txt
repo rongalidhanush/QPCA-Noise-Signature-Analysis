@@ -1,0 +1,11 @@
+1. Open MATLAB.
+2. Set the Current Folder to the project root.
+3. Run:
+   addpath("src")
+   main_NQPCA
+4. Wait for the N-QPCA/QPE stage to finish.
+5. Check:
+   results/nqpca_global_spectrum.csv
+   results/nqpca_per_noise_signatures.csv
+   results/nqpca_qpe_distribution.csv
+   results/figures/
