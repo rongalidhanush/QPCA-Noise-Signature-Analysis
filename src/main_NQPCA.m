@@ -1,13 +1,4 @@
 %% N-QPCA BASED QUANTUM NOISE SIGNATURE ANALYSIS
-% Main project entry point.
-%
-% The central algorithm is a 15-dimensional QPCA simulation.
-% The 15x15 covariance-derived density matrix is embedded into
-% a 16-dimensional Hilbert space, represented by 4 system qubits.
-%
-% Run from the project root:
-%   addpath("src")
-%   main_NQPCA
 
 clear; clc; close all;
 
@@ -57,6 +48,24 @@ fprintf("Covariance size      : %d x %d\n",size(C15,1),size(C15,2));
 fprintf("Quantum matrix size  : %d x %d\n",size(rho16,1),size(rho16,2));
 fprintf("System qubits        : 4\n");
 
+%% 3A. Export covariance and correlation matrices with heatmap plots
+% Both matrices are computed from the same globally standardized 15 features.
+R15 = corr(X);  % Pearson correlation matrix
+writematrix(C15,fullfile(resultDir,"nqpca_covariance_matrix.csv"));
+writematrix(R15,fullfile(resultDir,"nqpca_correlation_matrix.csv"));
+
+fCov = figure("Visible","off");
+heatmap(featureNames,featureNames,C15,"Colormap",parula, ...
+    "Title","Covariance Matrix of Standardized Features");
+exportgraphics(fCov,fullfile(figDir,"08_covariance_matrix.png"),"Resolution",220);
+close(fCov);
+
+fCorr = figure("Visible","off");
+heatmap(featureNames,featureNames,R15,"Colormap",parula, ...
+    "ColorLimits",[-1 1],"Title","Correlation Matrix of Features");
+exportgraphics(fCorr,fullfile(figDir,"08_correlation_matrix.png"),"Resolution",220);
+close(fCorr);
+
 %% 4. Classical numerical reference ONLY
 [V,D] = eig(rho16);
 lambdaClassical = real(diag(D));
@@ -99,13 +108,54 @@ for k = 1:numel(qLambda)
 end
 fprintf("Mean absolute error: %.8f\n",mean(absErr));
 
-%% 7. QPCA scores using the dominant reference modes
-nPC = 3;
+%% 7. Reconstruction and error-reduction analysis for 1 to 15 PCs
+% NOTE: Reconstruction uses the classical eigenvectors as the numerical
+% reference basis. QPE eigenvalue estimates alone do not provide eigenvectors.
+% The normalized Frobenius error is compared with the zero-PC baseline.
+nPC = 3;                         % Main score-space setting used below
 scores = Xz*V(1:15,1:nPC);
 Xrec = scores*V(1:15,1:nPC)';
 reconstructionError = norm(Xz-Xrec,"fro")/norm(Xz,"fro");
 
-fprintf("\nTop-%d classical reference explained variance: %.4f %%\n", ...
+numPC = size(Xz,2);
+pcCount = (1:numPC)';
+normalizedError = zeros(numPC,1);
+errorPercent = zeros(numPC,1);
+errorReductionPercent = zeros(numPC,1);
+varianceRetainedPercent = zeros(numPC,1);
+reductionFromPreviousPercent = zeros(numPC,1);
+previousError = 1; % zero-component baseline: reconstruct every value as zero
+
+for k = 1:numPC
+    Vk = V(1:15,1:k);
+    scoresK = Xz*Vk;
+    XrecK = scoresK*Vk';
+    normalizedError(k) = norm(Xz-XrecK,"fro")/norm(Xz,"fro");
+    errorPercent(k) = 100*normalizedError(k);
+    errorReductionPercent(k) = 100*(1-normalizedError(k));
+    varianceRetainedPercent(k) = 100*(1-normalizedError(k)^2);
+    reductionFromPreviousPercent(k) = 100*(previousError-normalizedError(k))/previousError;
+    previousError = normalizedError(k);
+end
+
+reconstructionResults = table(pcCount,normalizedError,errorPercent, ...
+    errorReductionPercent,varianceRetainedPercent,reductionFromPreviousPercent, ...
+    'VariableNames',{'NumberOfPCs','NormalizedReconstructionError', ...
+    'ReconstructionErrorPercent','ErrorReductionVsZeroPCPercent', ...
+    'VarianceRetainedPercent','ErrorReductionVsPreviousPCPercent'});
+
+selectedPCResults = reconstructionResults(ismember(reconstructionResults.NumberOfPCs,[3 10]),:);
+writetable(reconstructionResults,fullfile(resultDir,"nqpca_reconstruction_error_by_pc.csv"));
+writetable(selectedPCResults,fullfile(resultDir,"nqpca_reconstruction_summary_pc3_pc10.csv"));
+
+fprintf("\nRECONSTRUCTION / ERROR REDUCTION\n");
+for k = [3 10]
+    row = reconstructionResults(reconstructionResults.NumberOfPCs==k,:);
+    fprintf("Top-%d PCs: error = %.4f (%.2f%%), error reduction = %.2f%%, variance retained = %.2f%%\n", ...
+        k,row.NormalizedReconstructionError,row.ReconstructionErrorPercent, ...
+        row.ErrorReductionVsZeroPCPercent,row.VarianceRetainedPercent);
+end
+fprintf("Top-%d classical reference explained variance: %.4f %%\n", ...
     nPC,cumExplained(nPC));
 fprintf("Top-%d reconstruction error              : %.6f\n", ...
     nPC,reconstructionError);
@@ -197,6 +247,7 @@ save(fullfile(resultDir,"nqpca_main_results.mat"), ...
     "T","X","Xz","mu","sigma","C15","rho15","rho16", ...
     "V","lambdaClassical","explainedClassical","cumExplained", ...
     "qpca","scores","Xrec","reconstructionError", ...
+    "reconstructionResults","selectedPCResults", ...
     "typeResults","perNoise","centroidAccuracy", ...
     "noiseType","noiseStrength","featureNames");
 
@@ -260,14 +311,38 @@ legend(types,'Location','best');
 hold off;
 saveas(gcf,fullfile(figDir,"05_strength_vs_qpca.png"));
 
-figure('Name','Reconstruction');
-bar(1,reconstructionError);
-ylim([0 max(0.3,reconstructionError*1.2)]);
+figure('Name','Reconstruction Error and Reduction');
+plot(pcCount,errorPercent,'o-','LineWidth',1.5);
+hold on;
+plot(3,errorPercent(3),'s','MarkerSize',9,'LineWidth',2);
+plot(10,errorPercent(10),'d','MarkerSize',9,'LineWidth',2);
 grid on;
-xticks(1); xticklabels({'Top 3 QPCA'});
-ylabel('Normalized reconstruction error');
-title('Reconstruction Using Dominant Principal Modes');
+xlabel('Number of principal components');
+ylabel('Reconstruction error (%)');
+title('Reconstruction Error vs Number of Principal Components');
+legend('Reconstruction error','3 PCs','10 PCs','Location','northeast');
+text(3,errorPercent(3),sprintf('  3 PCs: %.2f%% error',errorPercent(3)), ...
+    'VerticalAlignment','bottom');
+text(10,errorPercent(10),sprintf('  10 PCs: %.2f%% error',errorPercent(10)), ...
+    'VerticalAlignment','bottom');
+hold off;
 saveas(gcf,fullfile(figDir,"06_reconstruction_error.png"));
+
+% Dedicated presentation figure: individual and cumulative variance for PCs 1-10.
+figure('Name','First 10 Principal Components');
+first10 = 1:10;
+yyaxis left;
+bar(first10,explainedClassical(first10));
+ylabel('Individual explained variance (%)');
+yyaxis right;
+plot(first10,cumExplained(first10),'o-','LineWidth',1.8);
+ylabel('Cumulative explained variance (%)');
+ylim([0 105]);
+xticks(first10);
+xlabel('Principal component');
+title('Explained Variance of the First 10 Principal Components');
+grid on;
+saveas(gcf,fullfile(figDir,"07_top10_components.png"));
 
 fprintf("\n============================================================\n");
 fprintf(" N-QPCA PROJECT COMPLETE\n");
@@ -275,6 +350,9 @@ fprintf("============================================================\n");
 fprintf("Results saved to: %s\n",resultDir);
 fprintf("Main MAT file   : nqpca_main_results.mat\n");
 fprintf("Figures folder  : results/figures/\n");
+fprintf("PC error table  : nqpca_reconstruction_error_by_pc.csv\n");
+fprintf("PC3/PC10 summary: nqpca_reconstruction_summary_pc3_pc10.csv\n");
+fprintf("Top-10 PC plot  : 07_top10_components.png\n");
 fprintf("============================================================\n");
 
 
